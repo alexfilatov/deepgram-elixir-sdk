@@ -1,0 +1,414 @@
+# Deepgram AI Voice Agent Examples
+
+```elixir
+Mix.install([
+  {:deepgram, "~> 0.1"},
+  {:kino, "~> 0.9"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Introduction
+
+This notebook demonstrates how to use Deepgram's AI Voice Agent API through the Elixir SDK. We'll explore:
+
+1. Setting up an AI agent
+2. Configuring the agent's capabilities
+3. Interacting with the agent using audio and text
+4. Function calling capabilities
+5. Managing agent sessions
+
+## Setup
+
+First, let's set up our Deepgram client with our API key:
+
+```elixir
+api_key_input = Kino.Input.password("Deepgram API Key")
+```
+
+```elixir
+api_key = Kino.Input.read(api_key_input)
+client = Deepgram.new(api_key: api_key)
+```
+
+## Creating an AI Agent
+
+An AI Voice Agent combines speech-to-text, natural language understanding, and text-to-speech to create conversational experiences.
+
+Let's define the configuration for our agent:
+
+```elixir
+agent_settings = %{
+  agent: %{
+    listen: %{
+      model: "nova-2",
+      language: "en",
+      smart_format: true,
+      encoding: "linear16",
+      sample_rate: 16000,
+      channels: 1,
+      interim_results: true,
+      punctuate: true,
+      endpointing: true,
+      utterance_end_ms: 1000,
+      vad_turnoff: 1000,
+      provider: %{
+        type: "deepgram",
+        model: "nova-2"
+      }
+    },
+    think: %{
+      provider: %{
+        type: "open_ai",
+        model: "gpt-4"
+      },
+      instructions: "You are a helpful assistant who provides concise, accurate information. You specialize in explaining technical concepts in simple terms.",
+      knowledge: ""  # Optional knowledge base for grounding responses
+    },
+    speak: %{
+      model: "aura-2-thalia-en",
+      encoding: "linear16",
+      container: "none",
+      sample_rate: 16000,
+      provider: %{
+        type: "deepgram",
+        model: "aura-2-thalia-en"
+      }
+    }
+  },
+  version: "latest",
+  format: "text",
+  encoding: "linear16",
+  sample_rate: 16000,
+  channels: 1,
+  language: "en",
+  greeting: "Hello! I'm your AI assistant powered by Deepgram. How can I help you today?"
+}
+```
+
+In a real application, you would start a WebSocket connection and interact with the agent:
+
+```elixir
+# Note: This is for illustration purposes only
+# In a real application, this would be integrated into your supervision tree
+
+agent_setup_code = """
+# Start the agent session
+{:ok, agent} = Deepgram.Agent.start_session(client, agent_settings)
+
+# Send audio to the agent (binary audio data)
+Deepgram.Agent.send_audio(agent, audio_chunk)
+
+# Alternatively, send text to the agent
+Deepgram.Agent.send_text(agent, "What can you tell me about natural language processing?")
+
+# Handle agent responses in your application
+receive do
+  {:deepgram_audio, audio_data} -> 
+    # Play or save the agent's spoken response
+    File.write("agent_response.wav", audio_data)
+    
+  {:deepgram_transcript, transcript} ->
+    # Process the transcript of what the user said
+    IO.puts("User said: \#{transcript}")
+    
+  {:deepgram_response, response} ->
+    # Process the agent's text response
+    IO.puts("Agent responded: \#{response}")
+    
+  {:deepgram_function_call_request, request} ->
+    # Handle function calls (see next section)
+    result = handle_function_call(request)
+    Deepgram.Agent.respond_to_function_call(agent, request["function_call_id"], result)
+    
+  {:deepgram_error, error} ->
+    # Handle any errors
+    IO.puts("Error: \#{inspect(error)}")
+end
+"""
+
+IO.puts(agent_setup_code)
+```
+
+## Function Calling
+
+One of the most powerful features of AI agents is function calling, which allows the agent to execute functions in your application:
+
+```elixir
+function_calling_example = """
+# Define your function schema in the agent settings
+updated_settings = %{
+  agent: %{
+    think: %{
+      provider: %{
+        type: "open_ai",
+        model: "gpt-4"
+      },
+      instructions: "You are a helpful assistant who can check the weather and set reminders.",
+      # Define available functions
+      functions: [
+        %{
+          name: "get_weather",
+          description: "Get the current weather for a location",
+          parameters: %{
+            type: "object",
+            properties: %{
+              location: %{
+                type: "string",
+                description: "The city and state, e.g., San Francisco, CA"
+              },
+              unit: %{
+                type: "string",
+                enum: ["celsius", "fahrenheit"],
+                description: "The temperature unit to use"
+              }
+            },
+            required: ["location"]
+          }
+        },
+        %{
+          name: "set_reminder",
+          description: "Set a reminder for the user",
+          parameters: %{
+            type: "object",
+            properties: %{
+              task: %{
+                type: "string",
+                description: "The task to remind about"
+              },
+              time: %{
+                type: "string",
+                description: "When to remind (ISO datetime or natural language like 'tomorrow at 3pm')"
+              }
+            },
+            required: ["task", "time"]
+          }
+        }
+      ]
+    }
+  }
+}
+
+# Update the agent with the new settings
+Deepgram.Agent.update_settings(agent, updated_settings)
+
+# When the agent calls a function, handle it appropriately
+defp handle_function_call(%{"function_call" => %{"name" => "get_weather", "arguments" => args}}) do
+  # In a real application, you would call a weather API
+  parsed_args = Jason.decode!(args)
+  location = parsed_args["location"]
+  unit = parsed_args["unit"] || "celsius"
+  
+  # Mock response
+  %{
+    temperature: if(unit == "celsius", do: 22, else: 72),
+    condition: "Sunny",
+    location: location
+  }
+end
+
+defp handle_function_call(%{"function_call" => %{"name" => "set_reminder", "arguments" => args}}) do
+  # In a real application, you would store the reminder
+  parsed_args = Jason.decode!(args)
+  task = parsed_args["task"]
+  time = parsed_args["time"]
+  
+  # Mock response
+  %{
+    success: true,
+    reminder_id: "rem_123456",
+    message: "Reminder set for #{task} at #{time}"
+  }
+end
+"""
+
+IO.puts(function_calling_example)
+```
+
+## Managing Agent State
+
+You can inject messages to maintain context across interactions:
+
+```elixir
+state_management_example = """
+# Inject a message to provide context
+message = %{
+  type: "system_message",  # or "user_message", "assistant_message"
+  content: "The user's name is Alex and they prefer hiking and photography.",
+  role: "system"
+}
+
+Deepgram.Agent.inject_message(agent, message)
+
+# You can also inject previous messages to maintain conversation history
+previous_message = %{
+  type: "user_message",
+  content: "What hiking trails would you recommend near San Francisco?",
+  role: "user"
+}
+
+Deepgram.Agent.inject_message(agent, previous_message)
+
+response_message = %{
+  type: "assistant_message",
+  content: "For photography enthusiasts who enjoy hiking, I'd recommend the Lands End Trail in San Francisco. It offers stunning views of the Golden Gate Bridge and the coastline.",
+  role: "assistant"
+}
+
+Deepgram.Agent.inject_message(agent, response_message)
+"""
+
+IO.puts(state_management_example)
+```
+
+## Customizing Agent Behavior
+
+You can update the agent's settings during a session to modify its behavior:
+
+```elixir
+custom_settings = %{
+  agent: %{
+    think: %{
+      instructions: "You are now a travel expert who specializes in outdoor adventures and photography spots."
+    },
+    speak: %{
+      model: "aura-2-zeus-en"  # Change the voice
+    }
+  },
+  greeting: "Hi Alex! I'm your adventure planning assistant. Where would you like to explore today?"
+}
+
+customization_example = """
+# Update agent settings mid-conversation
+Deepgram.Agent.update_settings(agent, custom_settings)
+
+# Send a keepalive message to prevent the connection from timing out
+# during periods of inactivity
+Deepgram.Agent.keepalive(agent)
+
+# When finished, close the session
+Deepgram.Agent.close_session(agent)
+"""
+
+IO.puts(customization_example)
+```
+
+## Real-World Implementation
+
+In a real Elixir application, you would typically integrate the agent into your supervision tree:
+
+```elixir
+implementation_example = """
+defmodule MyApp.AgentSupervisor do
+  use Supervisor
+  
+  def start_link(args) do
+    Supervisor.start_link(__MODULE__, args, name: __MODULE__)
+  end
+  
+  def init(_args) do
+    client = Deepgram.new(api_key: System.get_env("DEEPGRAM_API_KEY"))
+    
+    children = [
+      {MyApp.AgentManager, client}
+    ]
+    
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+end
+
+defmodule MyApp.AgentManager do
+  use GenServer
+  
+  def start_link(client) do
+    GenServer.start_link(__MODULE__, client, name: __MODULE__)
+  end
+  
+  def init(client) do
+    # Agent settings as defined earlier
+    {:ok, %{client: client, agents: %{}}}
+  end
+  
+  def handle_call({:start_session, user_id}, _from, state) do
+    settings = get_agent_settings_for_user(user_id)
+    {:ok, agent} = Deepgram.Agent.start_session(state.client, settings)
+    
+    # Store the agent PID associated with the user
+    updated_agents = Map.put(state.agents, user_id, agent)
+    {:reply, {:ok, agent}, %{state | agents: updated_agents}}
+  end
+  
+  def handle_call({:send_audio, user_id, audio_data}, _from, state) do
+    case Map.get(state.agents, user_id) do
+      nil -> 
+        {:reply, {:error, :no_session}, state}
+      agent -> 
+        :ok = Deepgram.Agent.send_audio(agent, audio_data)
+        {:reply, :ok, state}
+    end
+  end
+  
+  # Additional handlers for other agent operations
+  
+  defp get_agent_settings_for_user(user_id) do
+    # Get user-specific settings from database
+    # ...
+  end
+end
+"""
+
+IO.puts(implementation_example)
+```
+
+## Handling Webhooks
+
+For long-running agent sessions, you might want to use webhooks:
+
+```elixir
+webhook_example = """
+# In your Phoenix controller:
+defmodule MyApp.WebhookController do
+  use MyApp.Web, :controller
+  
+  def agent_callback(conn, params) do
+    # Process agent response from webhook
+    case params["event"] do
+      "transcript" ->
+        # Handle transcription result
+        process_transcript(params["transcript"])
+        
+      "response" ->
+        # Handle agent's text response
+        process_response(params["response"])
+        
+      "audio" ->
+        # Handle audio response (URL to audio file)
+        process_audio(params["audio_url"])
+        
+      "function_call" ->
+        # Handle function call request
+        result = handle_function_call(params["function_call"])
+        # Send result back through API
+        
+      _ ->
+        # Unknown event type
+    end
+    
+    # Send acknowledgment
+    conn
+    |> put_status(200)
+    |> json(%{received: true})
+  end
+end
+"""
+
+IO.puts(webhook_example)
+```
+
+## Conclusion
+
+This notebook has demonstrated the capabilities of Deepgram's AI Voice Agent API through the Elixir SDK. AI agents combine speech recognition, natural language understanding, and speech synthesis to create conversational experiences that can be integrated into various applications.
+
+For more information, refer to:
+- [Deepgram Elixir SDK Documentation](https://hexdocs.pm/deepgram)
+- [Deepgram API Documentation](https://developers.deepgram.com/docs)

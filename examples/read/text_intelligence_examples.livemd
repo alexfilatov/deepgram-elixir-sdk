@@ -1,0 +1,305 @@
+# Deepgram Read (Text Intelligence) Examples
+
+```elixir
+Mix.install([
+  {:deepgram, "~> 0.1"},
+  {:kino, "~> 0.9"},
+  {:jason, "~> 1.4"},
+  {:kino_bumblebee, "~> 0.3.0"}  # For visualization
+])
+```
+
+## Introduction
+
+This notebook demonstrates how to use Deepgram's Text Intelligence (Read) API through the Elixir SDK. We'll explore:
+
+1. Sentiment analysis
+2. Topic detection
+3. Intent recognition
+4. Text summarization
+5. Combined analysis
+
+## Setup
+
+First, let's set up our Deepgram client with our API key:
+
+```elixir
+api_key_input = Kino.Input.password("Deepgram API Key")
+```
+
+```elixir
+api_key = Kino.Input.read(api_key_input)
+client = Deepgram.new(api_key: api_key)
+```
+
+## Sentiment Analysis
+
+Sentiment analysis helps identify the emotional tone behind a text:
+
+```elixir
+sentiment_text_input = Kino.Input.textarea("Enter text for sentiment analysis", default: "I absolutely love this product! It has exceeded all my expectations and made my life so much easier.")
+```
+
+```elixir
+sentiment_text = Kino.Input.read(sentiment_text_input)
+
+{:ok, sentiment_response} = Deepgram.Read.analyze_sentiment(
+  client,
+  %{text: sentiment_text}
+)
+
+# Display the sentiment analysis results
+sentiment = sentiment_response["results"]["sentiments"]
+IO.inspect(sentiment, label: "Sentiment Analysis")
+
+# Create a simple visualization
+sentiment_score = sentiment["sentiment_score"]
+sentiment_label = sentiment["sentiment"]
+
+sentiment_bar = if sentiment_score >= 0 do
+  positive_percentage = trunc(sentiment_score * 100)
+  neutral_percentage = 100 - positive_percentage
+  "Positive: #{'#' |> String.duplicate(positive_percentage)} #{positive_percentage}%\nNeutral:  #{' ' |> String.duplicate(positive_percentage)}#{'-' |> String.duplicate(neutral_percentage)} #{neutral_percentage}%"
+else
+  negative_percentage = trunc(abs(sentiment_score) * 100)
+  neutral_percentage = 100 - negative_percentage
+  "Negative: #{'#' |> String.duplicate(negative_percentage)} #{negative_percentage}%\nNeutral:  #{' ' |> String.duplicate(negative_percentage)}#{'-' |> String.duplicate(neutral_percentage)} #{neutral_percentage}%"
+end
+
+IO.puts("Overall sentiment: #{sentiment_label} (Score: #{sentiment_score})")
+IO.puts("\n#{sentiment_bar}")
+```
+
+## Topic Detection
+
+Topic detection identifies the main subjects discussed in a text:
+
+```elixir
+topic_text_input = Kino.Input.textarea("Enter text for topic detection", default: "Machine learning models have advanced significantly in recent years. Deep neural networks can now recognize images, translate languages, and even generate human-like text. Companies are investing heavily in AI technology to automate processes and gain competitive advantages.")
+```
+
+```elixir
+topic_text = Kino.Input.read(topic_text_input)
+
+{:ok, topic_response} = Deepgram.Read.analyze_topics(
+  client,
+  %{text: topic_text}
+)
+
+# Display the topics detected
+topics = topic_response["results"]["topics"]
+IO.inspect(topics, label: "Topic Detection")
+
+# Create a simple visualization of top topics
+if topics["topics"] != nil do
+  topics["topics"]
+  |> Enum.sort_by(fn t -> -t["score"] end)
+  |> Enum.take(5)
+  |> Enum.each(fn topic ->
+    topic_name = topic["topic"] || "Unknown"
+    topic_score = topic["score"]
+    bar_length = trunc(topic_score * 50)
+    IO.puts("#{topic_name}: #{'#' |> String.duplicate(bar_length)} (#{Float.round(topic_score, 3)})")
+  end)
+end
+```
+
+## Intent Recognition
+
+Intent recognition identifies the purpose or intention behind a text:
+
+```elixir
+intent_text_input = Kino.Input.textarea("Enter text for intent recognition", default: "I would like to cancel my subscription to your service. How do I do that?")
+```
+
+```elixir
+intent_text = Kino.Input.read(intent_text_input)
+
+{:ok, intent_response} = Deepgram.Read.analyze_intents(
+  client,
+  %{text: intent_text}
+)
+
+# Display the intents detected
+intents = intent_response["results"]["intents"]
+IO.inspect(intents, label: "Intent Recognition")
+
+# Create a simple visualization of top intents
+if intents["intents"] != nil do
+  intents["intents"]
+  |> Enum.sort_by(fn i -> -i["confidence"] end)
+  |> Enum.take(5)
+  |> Enum.each(fn intent ->
+    intent_name = intent["intent"] || "Unknown"
+    confidence = intent["confidence"]
+    bar_length = trunc(confidence * 50)
+    IO.puts("#{intent_name}: #{'#' |> String.duplicate(bar_length)} (#{Float.round(confidence, 3)})")
+  end)
+end
+```
+
+## Text Summarization
+
+Text summarization condenses text while preserving key information:
+
+```elixir
+summarize_text_input = Kino.Input.textarea("Enter text to summarize", default: "The global climate change conference concluded with mixed results. Representatives from 195 countries gathered to discuss strategies for reducing carbon emissions and mitigating the effects of climate change. Developed nations pledged $100 billion in annual climate financing for developing countries, though some critics argue this amount is insufficient. New targets were set for renewable energy adoption, with a goal of 40% of global energy coming from renewable sources by 2030. The conference also addressed deforestation, with agreements to halt and reverse forest loss by 2030. However, some environmental organizations expressed disappointment over the lack of binding commitments from major carbon-emitting countries. Despite the criticisms, the conference was seen as a step forward in international climate cooperation, with unprecedented participation from private sector companies pledging net-zero emissions goals.")
+```
+
+```elixir
+summarize_text = Kino.Input.read(summarize_text_input)
+
+{:ok, summary_response} = Deepgram.Read.summarize(
+  client,
+  %{text: summarize_text}
+)
+
+# Display the summary
+summary = summary_response["results"]["summary"]
+IO.puts("Original text length: #{String.length(summarize_text)} characters")
+IO.puts("Summary length: #{String.length(summary["text"])} characters")
+IO.puts("\nSummary:")
+IO.puts(summary["text"])
+
+# Optional: try with a specific model
+{:ok, nova_summary_response} = Deepgram.Read.summarize_with_model(
+  client,
+  %{text: summarize_text},
+  "nova-2"
+)
+
+IO.puts("\nNova-2 Model Summary:")
+IO.puts(nova_summary_response["results"]["summary"]["text"])
+```
+
+## Combined Analysis
+
+You can perform multiple analyses at once for efficiency:
+
+```elixir
+combined_text_input = Kino.Input.textarea("Enter text for combined analysis", default: "I recently bought your smart home device and I'm having trouble connecting it to my Wi-Fi network. The instructions aren't clear about which settings to use, and I've tried resetting it multiple times. This is frustrating since I specifically purchased this model for its supposed easy setup. I need help resolving this issue as soon as possible.")
+```
+
+```elixir
+combined_text = Kino.Input.read(combined_text_input)
+
+{:ok, combined_response} = Deepgram.Read.analyze(
+  client,
+  %{text: combined_text},
+  %{
+    language: "en",     # Required parameter
+    sentiment: true,
+    topics: true,
+    intents: true,
+    summarize: true
+  }
+)
+
+# Extract and display all results
+results = combined_response["results"]
+
+IO.puts("==== COMBINED ANALYSIS RESULTS ====\n")
+
+# Display sentiment
+if Map.has_key?(results, "sentiments") do
+  sentiment = results["sentiments"]
+  IO.puts("SENTIMENT: #{sentiment["sentiment"]} (Score: #{sentiment["sentiment_score"]})")
+end
+
+# Display topics
+if Map.has_key?(results, "topics") && results["topics"]["topics"] != nil do
+  IO.puts("\nTOP TOPICS:")
+  results["topics"]["topics"]
+  |> Enum.sort_by(fn t -> -t["score"] end)
+  |> Enum.take(3)
+  |> Enum.each(fn topic ->
+    IO.puts("- #{topic["topic"]} (#{Float.round(topic["score"], 3)})")
+  end)
+end
+
+# Display intents
+if Map.has_key?(results, "intents") && results["intents"]["intents"] != nil do
+  IO.puts("\nINTENTS:")
+  results["intents"]["intents"]
+  |> Enum.sort_by(fn i -> -i["confidence"] end)
+  |> Enum.take(3)
+  |> Enum.each(fn intent ->
+    IO.puts("- #{intent["intent"]} (#{Float.round(intent["confidence"], 3)})")
+  end)
+end
+
+# Display summary
+if Map.has_key?(results, "summary") do
+  IO.puts("\nSUMMARY:")
+  IO.puts(results["summary"]["text"])
+end
+```
+
+## Language Analysis
+
+Analyze text in different languages:
+
+```elixir
+language_examples = [
+  {"en", "I hope this translation works well in English."},
+  {"es", "Espero que esta traducción funcione bien en español."},
+  {"fr", "J'espère que cette traduction fonctionne bien en français."},
+  {"de", "Ich hoffe, diese Übersetzung funktioniert gut auf Deutsch."}
+]
+
+for {lang_code, text} <- language_examples do
+  IO.puts("\n== Testing language: #{lang_code} ==")
+  
+  {:ok, lang_response} = Deepgram.Read.analyze(
+    client,
+    %{text: text},
+    %{
+      sentiment: true,
+      language: lang_code  # Specify language code
+    }
+  )
+  
+  sentiment = lang_response["results"]["sentiments"]
+  IO.puts("Text: #{text}")
+  IO.puts("Sentiment: #{sentiment["sentiment"]} (Score: #{sentiment["sentiment_score"]})")
+end
+```
+
+## Entity Recognition
+
+Extract named entities from text:
+
+```elixir
+entity_text = "Apple CEO Tim Cook announced their new headquarters in Cupertino, California on September 12, 2023. The company's stock rose 3% following the announcement."
+
+{:ok, entity_response} = Deepgram.Read.analyze(
+  client,
+  %{text: entity_text},
+  %{
+    entities: true  # Extract named entities
+  }
+)
+
+# Display entities if available
+if Map.has_key?(entity_response["results"], "entities") do
+  entities = entity_response["results"]["entities"]
+  IO.puts("Entities detected:")
+  
+  if entities["entities"] != nil do
+    entities["entities"]
+    |> Enum.each(fn entity ->
+      IO.puts("- #{entity["text"]} (#{entity["type"]})")
+    end)
+  end
+else
+  IO.puts("No entities detected or feature not available")
+end
+```
+
+## Conclusion
+
+These examples demonstrate the capabilities of Deepgram's Text Intelligence (Read) API through the Elixir SDK. You can extract valuable insights from text data for a wide range of applications, from customer service to content analysis.
+
+For more information, refer to:
+- [Deepgram Elixir SDK Documentation](https://hexdocs.pm/deepgram)
+- [Deepgram API Documentation](https://developers.deepgram.com/docs)

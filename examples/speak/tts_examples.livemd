@@ -1,0 +1,238 @@
+# Deepgram Speak (Text-to-Speech) Examples
+
+```elixir
+Mix.install([
+  {:deepgram, "~> 0.1"},
+  {:kino, "~> 0.9"},
+  {:ex_audio, "~> 0.1"}  # For playing audio in the notebook
+])
+```
+
+## Introduction
+
+This notebook demonstrates how to use Deepgram's Text-to-Speech (Speak) API through the Elixir SDK. We'll explore:
+
+1. Basic speech synthesis
+2. Voice customization options
+3. Streaming text-to-speech
+4. Saving audio to files
+
+## Setup
+
+First, let's set up our Deepgram client with our API key:
+
+```elixir
+api_key_input = Kino.Input.password("Deepgram API Key")
+```
+
+```elixir
+api_key = Kino.Input.read(api_key_input)
+client = Deepgram.new(api_key: api_key)
+```
+
+## Basic Text-to-Speech Synthesis
+
+Let's start with a simple example of converting text to speech:
+
+```elixir
+text_input = Kino.Input.textarea("Enter text to synthesize", default: "Hello! This is Deepgram's text to speech API. It sounds very natural.")
+```
+
+```elixir
+text = Kino.Input.read(text_input)
+{:ok, audio_data} = Deepgram.Speak.synthesize(
+  client,
+  %{text: text},
+  %{
+    model: "aura-2-thalia-en",  # Thalia voice
+    encoding: "linear16",        # Linear PCM format
+    sample_rate: 24000           # 24kHz sample rate
+  }
+)
+
+# Save the audio to a temporary file so we can play it
+temp_file = "/tmp/deepgram_speech.wav"
+File.write!(temp_file, audio_data)
+
+# Create an audio player to listen to the result
+Kino.Audio.new(temp_file)
+```
+
+## Different Voices
+
+Deepgram offers multiple voices. Let's try different ones:
+
+```elixir
+voice_options = [
+  "aura-2-thalia-en", 
+  "aura-2-zeus-en",
+  "aura-2-athena-en", 
+  "aura-2-apollo-en"
+]
+
+voice_input = Kino.Input.select("Select a voice", voice_options)
+```
+
+```elixir
+selected_voice = Kino.Input.read(voice_input)
+demo_text = "This is what my voice sounds like. I can read any text you provide in a natural-sounding way."
+
+{:ok, voice_audio} = Deepgram.Speak.synthesize(
+  client,
+  %{text: demo_text},
+  %{
+    model: selected_voice,
+    encoding: "linear16",
+    sample_rate: 24000
+  }
+)
+
+voice_file = "/tmp/deepgram_voice_demo.wav"
+File.write!(voice_file, voice_audio)
+Kino.Audio.new(voice_file)
+```
+
+## Advanced Speech Customization
+
+You can customize various aspects of the synthesized speech:
+
+```elixir
+custom_text = "I can speak with different emotions and tones. Let me demonstrate that for you now."
+
+{:ok, custom_audio} = Deepgram.Speak.synthesize(
+  client,
+  %{text: custom_text},
+  %{
+    model: "aura-2-thalia-en",
+    encoding: "linear16",
+    sample_rate: 24000,
+    pitch: 1.2,             # Higher pitch (> 1.0 is higher, < 1.0 is lower)
+    speed: 0.9,             # Slightly slower speech rate
+    container: "mp3"        # Output as MP3 instead of WAV
+  }
+)
+
+custom_file = "/tmp/deepgram_custom.mp3"
+File.write!(custom_file, custom_audio)
+Kino.Audio.new(custom_file)
+```
+
+## Saving Speech to Files
+
+Instead of handling the audio binary directly, you can save it to a file in one step:
+
+```elixir
+file_path = "/tmp/saved_speech.wav"
+{:ok, response} = Deepgram.Speak.save_to_file(
+  client,
+  file_path,
+  %{text: "This audio has been saved directly to a file by the Deepgram SDK."},
+  %{model: "aura-2-zeus-en"}
+)
+
+# Display metadata about the generated audio
+response
+```
+
+```elixir
+# Play the saved file
+Kino.Audio.new(file_path)
+```
+
+## Live Speech Synthesis (Streaming)
+
+For applications requiring real-time speech synthesis, you can use streaming TTS:
+
+```elixir
+# Note: This example is for illustration; in a real application, 
+# you would implement proper handlers
+streaming_example = """
+In a real application, you would set up a WebSocket connection like this:
+
+{:ok, websocket} = Deepgram.Speak.live_synthesis(
+  client,
+  %{
+    model: "aura-2-thalia-en",
+    encoding: "linear16",
+    sample_rate: 24000
+  }
+)
+
+# Send text chunks as they become available
+Deepgram.Speak.WebSocket.send_text(websocket, "Hello, ")
+Deepgram.Speak.WebSocket.send_text(websocket, "this is streaming ")
+Deepgram.Speak.WebSocket.send_text(websocket, "text-to-speech!")
+
+# Handle audio chunks as they arrive
+receive do
+  {:deepgram_audio, audio_chunk} -> 
+    # Play or save the audio chunk
+    # For example: append to a file
+    File.write("stream_output.wav", audio_chunk, [:append])
+end
+"""
+
+IO.puts(streaming_example)
+```
+
+## Speech Synthesis with SSML
+
+Speech Synthesis Markup Language (SSML) provides more control over pronunciation and timing:
+
+```elixir
+ssml_text = """
+<speak>
+  Hello, I am your virtual assistant. 
+  <break time="500ms"/>
+  I can pronounce complex words like <phoneme alphabet="ipa" ph="ˈæn.θrə.pə.ˌmɔr.fɪk">anthropomorphic</phoneme>.
+  <break time="500ms"/>
+  I can also <prosody rate="slow">speak more slowly</prosody> or <prosody rate="fast">speak more quickly</prosody>.
+  <break time="500ms"/>
+  And I can <prosody pitch="+20%">raise my pitch</prosody> or <prosody pitch="-20%">lower my pitch</prosody>.
+</speak>
+"""
+
+{:ok, ssml_audio} = Deepgram.Speak.synthesize(
+  client,
+  %{text: ssml_text},
+  %{
+    model: "aura-2-apollo-en",
+    encoding: "linear16",
+    sample_rate: 24000,
+    ssml: true  # Enable SSML processing
+  }
+)
+
+ssml_file = "/tmp/deepgram_ssml.wav"
+File.write!(ssml_file, ssml_audio)
+Kino.Audio.new(ssml_file)
+```
+
+## Multilingual Text-to-Speech
+
+Deepgram supports multiple languages for speech synthesis:
+
+```elixir
+# Spanish example
+{:ok, spanish_audio} = Deepgram.Speak.synthesize(
+  client,
+  %{text: "Hola, ¿cómo estás? Espero que tengas un buen día."},
+  %{
+    model: "aura-2-carmen-es",  # Spanish voice model
+    encoding: "linear16",
+    sample_rate: 24000
+  }
+)
+
+spanish_file = "/tmp/deepgram_spanish.wav"
+File.write!(spanish_file, spanish_audio)
+Kino.Audio.new(spanish_file)
+```
+
+## Conclusion
+
+These examples demonstrate the capabilities of Deepgram's Text-to-Speech API through the Elixir SDK. You can create natural-sounding speech for a wide range of applications, from virtual assistants to accessibility features.
+
+For more information, refer to:
+- [Deepgram Elixir SDK Documentation](https://hexdocs.pm/deepgram)
+- [Deepgram API Documentation](https://developers.deepgram.com/docs)

@@ -1,0 +1,236 @@
+# Deepgram Listen (Speech-to-Text) Examples
+
+```elixir
+Mix.install([
+  {:deepgram, "~> 0.1"},
+  {:kino, "~> 0.9"}
+])
+```
+
+## Introduction
+
+This notebook demonstrates how to use Deepgram's Speech-to-Text (Listen) API through the Elixir SDK. We'll explore:
+
+1. Prerecorded audio transcription
+2. Live audio streaming
+3. Various transcription features (speaker diarization, smart formatting, etc.)
+
+## Setup
+
+First, let's set up our Deepgram client with our API key:
+
+```elixir
+api_key_input = Kino.Input.password("Deepgram API Key")
+```
+
+```elixir
+api_key = Kino.Input.read(api_key_input)
+client = Deepgram.new(api_key: api_key)
+```
+
+## Transcribing Audio from URL
+
+```elixir
+# Example public audio URL
+audio_url = "https://static.deepgram.com/examples/interview_speech-analytics.wav"
+
+# Basic transcription
+{:ok, response} = Deepgram.Listen.transcribe_url(client, %{url: audio_url})
+
+# Display the transcript
+response["results"]["channels"]
+|> Enum.at(0)
+|> Map.get("alternatives")
+|> Enum.at(0)
+|> Map.get("transcript")
+```
+
+## Enhanced Transcription Options
+
+```elixir
+# More options for better transcription quality
+{:ok, response} = Deepgram.Listen.transcribe_url(
+  client,
+  %{url: audio_url},
+  %{
+    model: "nova-2",          # Use the latest model for best results
+    smart_format: true,       # Format numbers, dates, etc.
+    punctuate: true,          # Add punctuation
+    diarize: true,            # Identify different speakers
+    paragraphs: true,         # Organize into paragraphs
+    utterances: true,         # Split by speaker turns
+    detect_language: true     # Detect the spoken language
+  }
+)
+
+# Display the enhanced transcript with speakers
+transcript_with_speakers = response["results"]["channels"]
+|> Enum.at(0)
+|> Map.get("alternatives")
+|> Enum.at(0)
+|> Map.get("paragraphs")
+|> Map.get("transcript")
+
+transcript_with_speakers
+```
+
+## Transcribing Audio Files
+
+First, let's download a sample file to work with:
+
+```elixir
+# Download a sample audio file
+sample_file_path = "/tmp/sample_audio.wav"
+sample_url = "https://static.deepgram.com/examples/sample1.wav"
+
+{:ok, %HTTPoison.Response{body: file_content}} = HTTPoison.get(sample_url)
+File.write!(sample_file_path, file_content)
+
+# Now transcribe the file
+{:ok, audio_data} = File.read(sample_file_path)
+{:ok, file_response} = Deepgram.Listen.transcribe_file(
+  client, 
+  audio_data,
+  %{model: "nova-2"}
+)
+
+file_transcript = file_response["results"]["channels"]
+|> Enum.at(0)
+|> Map.get("alternatives")
+|> Enum.at(0)
+|> Map.get("transcript")
+
+file_transcript
+```
+
+## Async Transcription with Callbacks
+
+For longer audio files, you might want to use async transcription:
+
+```elixir
+# Note: You need a publicly accessible webhook URL for this to work
+webhook_url = "https://webhook.site/your-unique-id"
+
+{:ok, async_response} = Deepgram.Listen.transcribe_url_callback(
+  client,
+  %{url: "https://static.deepgram.com/examples/Bueller-Life-moves-pretty-fast.wav"},
+  webhook_url,
+  %{model: "nova-2"}
+)
+
+# This will return a request_id that you can use to track the transcription
+async_response
+```
+
+## Live Audio Streaming
+
+For live audio streaming, you'll use WebSockets. Here's how to set up a live transcription session:
+
+```elixir
+# This would typically be in a supervision tree in a real application
+# For demonstration purposes only
+{:ok, websocket} = Deepgram.Listen.live_transcription(
+  client,
+  %{
+    model: "nova-2",
+    interim_results: true,
+    punctuate: true,
+    encoding: "linear16",
+    sample_rate: 16000,
+    channels: 1
+  }
+)
+
+# In a real application, you would send audio data like this:
+# Deepgram.Listen.WebSocket.send_audio(websocket, audio_chunk)
+
+# And handle messages in a receive block:
+# receive do
+#   {:deepgram_result, result} -> 
+#     transcript = result["channel"]["alternatives"] |> hd |> Map.get("transcript")
+#     IO.puts("Transcript: #{transcript}")
+#   {:deepgram_error, error} -> 
+#     IO.puts("Error: #{inspect(error)}")
+# end
+
+# For this example, we'll just close the connection after a few seconds
+Process.sleep(2000)
+Deepgram.Listen.WebSocket.close(websocket)
+```
+
+## Advanced Features
+
+### Speech Recognition with Redaction
+
+```elixir
+{:ok, redacted_response} = Deepgram.Listen.transcribe_url(
+  client,
+  %{url: "https://static.deepgram.com/examples/sample_with_pii.wav"},
+  %{
+    model: "nova-2",
+    redact: ["pci", "ssn", "pii"],  # Redact personally identifiable information
+    redact_replace: "[REDACTED]"    # Replace redacted content with this text
+  }
+)
+
+redacted_transcript = redacted_response["results"]["channels"]
+|> Enum.at(0)
+|> Map.get("alternatives")
+|> Enum.at(0)
+|> Map.get("transcript")
+
+redacted_transcript
+```
+
+### Topic Detection in Audio
+
+```elixir
+{:ok, topics_response} = Deepgram.Listen.transcribe_url(
+  client,
+  %{url: "https://static.deepgram.com/examples/financial-call.wav"},
+  %{
+    model: "nova-2",
+    detect_topics: true  # Identify topics in the audio
+  }
+)
+
+# Extract topics
+topics = topics_response["results"]["channels"]
+|> Enum.at(0)
+|> Map.get("alternatives")
+|> Enum.at(0)
+|> Map.get("topics")
+
+topics
+```
+
+### Sentiment Analysis in Audio
+
+```elixir
+{:ok, sentiment_response} = Deepgram.Listen.transcribe_url(
+  client,
+  %{url: "https://static.deepgram.com/examples/positive-review.wav"},
+  %{
+    model: "nova-2",
+    detect_sentiment: true  # Analyze sentiment in the audio
+  }
+)
+
+# Extract sentiment
+sentiment = sentiment_response["results"]["channels"]
+|> Enum.at(0)
+|> Map.get("alternatives")
+|> Enum.at(0)
+|> Map.get("sentiment")
+
+sentiment
+```
+
+## Conclusion
+
+These examples demonstrate the capabilities of Deepgram's Speech-to-Text API through the Elixir SDK. You can combine different features to create powerful applications that understand spoken language.
+
+For more information, refer to:
+
+* [Deepgram Elixir SDK Documentation](https://hexdocs.pm/deepgram)
+* [Deepgram API Documentation](https://developers.deepgram.com/docs)
